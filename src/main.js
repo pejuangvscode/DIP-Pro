@@ -1,30 +1,96 @@
 import './style.css'
+
 document.querySelector('#app').innerHTML = `
-    <h1>Wound Area Measurement</h1>
-    <input type="file" id="imageInput" accept="image/*">
-    <canvas id="outputCanvas"></canvas>
-    <canvas id="outputGrayscale"></canvas>
-    <canvas id="outputBlur"></canvas>
-    <canvas id="outputThreshold"></canvas>
-    <canvas id="outputContours"></canvas>
-    <canvas id="outputDilated"></canvas>
-    <canvas id="outputErosion"></canvas>
-    <canvas id="outputCanny"></canvas>
-    <canvas id="outputFinalDilated"></canvas>
-    <p id="result"></p>
+  <header class="header">
+    <div class="logo">LOGO</div>
+    <div class="app-name">Wound Scanner</div>
+  </header>
+  
+  <div class="hero">
+    <div class="content">
+      <h1>Physical Wound Scanner</h1>
+      <p>Scan by uploading your wound photo here to see the results.</p>
+      
+      <label for="imageInput" class="upload-button">
+        <div>
+            <img src="upload.svg" width="30" height="30"/>
+            <path fill="none" d="M0 0h24v24H0z"/>
+        </div>
+        <input type="file" id="imageInput" accept="image/*" hidden>
+      </label>
+    </div>
+  </div>
+  
+  <div class="info-section">
+    <h2>What is Wound Scanner?</h2>
+    <p>Aliquam et erat nec urna hendrerit sollicitudin. Sed convallis hendrerit tortor, egestas vehicula quam gravida vitae. Ut id rhoncus dolor, eu malesuada felis. Pellentesque habitant morbi tristique senectus et netus et malesuada fames ac turpis egestas. Ut sed laoreet lacus. Etiam dictum augue quis risus fermentum porttitor. Vivamus nec aliquet felis.</p>
+  </div>
+  
+  <div class="processing-container">
+    <div class="processing-steps" id="processingSteps">
+      <h3>Processing Steps</h3>
+      <div class="canvas-container">
+        <div class="canvas-item">
+          <h4>Original Image</h4>
+          <canvas id="outputCanvas"></canvas>
+        </div>
+        <div class="canvas-item">
+          <h4>Grayscale</h4>
+          <canvas id="outputGrayscale"></canvas>
+        </div>
+        <div class="canvas-item">
+          <h4>Blurred</h4>
+          <canvas id="outputBlur"></canvas>
+        </div>
+        <div class="canvas-item">
+          <h4>Threshold</h4>
+          <canvas id="outputThreshold"></canvas>
+        </div>
+        <div class="canvas-item">
+          <h4>Dilated</h4>
+          <canvas id="outputDilated"></canvas>
+        </div>
+        <div class="canvas-item">
+          <h4>Erosion</h4>
+          <canvas id="outputErosion"></canvas>
+        </div>
+        <div class="canvas-item">
+          <h4>Canny Edge</h4>
+          <canvas id="outputCanny"></canvas>
+        </div>
+        <div class="canvas-item">
+          <h4>Final Dilated</h4>
+          <canvas id="outputFinalDilated"></canvas>
+        </div>
+      </div>
+    </div>
+    
+    <div class="result-container">
+      <h3>Result</h3>
+      <p id="result" class="result-text">Upload an image to see the wound area measurement</p>
+    </div>
+  </div>
 `;
+
+// Hide processing steps initially
+document.getElementById('processingSteps').style.display = 'none';
 
 // Tunggu sampai OpenCV siap sebelum menjalankan kode
 function waitForOpenCV(callback) {
-    if (cv && cv.getBuildInformation) {
+    if (window.cv && cv.getBuildInformation) {
+        console.log('OpenCV loaded successfully');
         callback();
     } else {
-        setTimeout(() => waitForOpenCV(callback), 50);
+        console.log('Waiting for OpenCV...');
+        setTimeout(() => waitForOpenCV(callback), 100);
     }
 }
 
 // Fungsi utama untuk memproses gambar
 function processWoundImage(image) {
+    // Show processing steps
+    document.getElementById('processingSteps').style.display = 'block';
+    
     let imgElement = new Image();
     imgElement.src = URL.createObjectURL(image);
     imgElement.onload = function () {
@@ -96,11 +162,11 @@ function processWoundImage(image) {
             woundAreaPx += cv.contourArea(finalContours.get(i));
         }
 
-        let dpi = 300;
+        let dpi = 180;
         let pxToCm = 2.54 / dpi;
         let woundAreaCm2 = woundAreaPx * (pxToCm ** 2);
 
-        document.getElementById('result').innerText = `Area luka: ${woundAreaCm2.toFixed(2)} cm²`;
+        document.getElementById('result').innerText = `Wound Area: ${woundAreaCm2.toFixed(2)} cm²`;
 
         // Hapus matriks dari memori
         src.delete();
