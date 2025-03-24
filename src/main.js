@@ -173,7 +173,7 @@ function processWoundImage(image) {
             woundAreaPx += cv.contourArea(finalContours.get(i));
         }
 
-        let dpi = 300;
+        let dpi = 180;
         let pxToCm = 2.54 / dpi;
         let woundAreaCm2 = woundAreaPx * (pxToCm ** 2);
 
