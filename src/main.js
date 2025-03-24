@@ -2,7 +2,7 @@ import './style.css'
 
 document.querySelector('#app').innerHTML = `
   <header class="header">
-    <div class="logo"><img src="logo.png" width="20"/></div>
+    <div class="logo"><img src="logo.svg" width="20"/></div>
     <div class="app-name">Wound Scanner</div>
   </header>
   
