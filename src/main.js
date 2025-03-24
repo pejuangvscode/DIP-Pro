@@ -2,7 +2,7 @@ import './style.css'
 
 document.querySelector('#app').innerHTML = `
   <header class="header">
-    <div class="logo">LOGO</div>
+    <div class="logo">          <img src="logo.png" width="20"/></div>
     <div class="app-name">Wound Scanner</div>
   </header>
   
@@ -13,8 +13,8 @@ document.querySelector('#app').innerHTML = `
       
       <label for="imageInput" class="upload-button">
         <div>
-            <img src="upload.svg" width="30" height="30"/>
-            <path fill="none" d="M0 0h24v24H0z"/>
+          <img src="upload.svg" width="30" height="30"/>
+          <path fill="none" d="M0 0h24v24H0z"/>
         </div>
         <input type="file" id="imageInput" accept="image/*" hidden>
       </label>
@@ -23,7 +23,7 @@ document.querySelector('#app').innerHTML = `
   
   <div class="info-section">
     <h2>What is Wound Scanner?</h2>
-    <p>Aliquam et erat nec urna hendrerit sollicitudin. Sed convallis hendrerit tortor, egestas vehicula quam gravida vitae. Ut id rhoncus dolor, eu malesuada felis. Pellentesque habitant morbi tristique senectus et netus et malesuada fames ac turpis egestas. Ut sed laoreet lacus. Etiam dictum augue quis risus fermentum porttitor. Vivamus nec aliquet felis.</p>
+    <p>Wound Scanner is a digital imaging-based system designed to accurately measure wound areas using devices such as mobile or computer cameras. This system employs various image processing techniques, including grayscale conversion, threshold-based segmentation, and contour detection and measurement to identify and quantify the affected area. By utilizing image metadata, such as resolution and DPI, Wound Scanner converts measurement results from pixels to metric units to obtain a more precise wound size estimation. Developed as a telemedicine support tool, this technology enables patients or healthcare professionals to monitor wounds efficiently without requiring frequent direct contact. However, the accuracy of measurements may be influenced by several factors, including lighting conditions, camera resolution, and the distance between the device and the wound. Therefore, further development is needed to enhance accuracy and ensure the medical validity of this system.</p>
   </div>
   
   <div class="processing-container">
@@ -65,7 +65,7 @@ document.querySelector('#app').innerHTML = `
       </div>
     </div>
     
-    <div class="result-container">
+    <div class="result-container" id="resultContainer">
       <h3>Result</h3>
       <p id="result" class="result-text">Upload an image to see the wound area measurement</p>
     </div>
@@ -74,6 +74,17 @@ document.querySelector('#app').innerHTML = `
 
 // Hide processing steps initially
 document.getElementById('processingSteps').style.display = 'none';
+
+// Function to scroll to the result container
+function scrollToResult() {
+  const resultContainer = document.getElementById('resultContainer');
+  if (resultContainer) {
+    // Adding a slight delay to ensure all processing is complete
+    setTimeout(() => {
+      resultContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 200);
+  }
+}
 
 // Tunggu sampai OpenCV siap sebelum menjalankan kode
 function waitForOpenCV(callback) {
@@ -162,7 +173,7 @@ function processWoundImage(image) {
             woundAreaPx += cv.contourArea(finalContours.get(i));
         }
 
-        let dpi = 180;
+        let dpi = 300;
         let pxToCm = 2.54 / dpi;
         let woundAreaCm2 = woundAreaPx * (pxToCm ** 2);
 
@@ -180,6 +191,9 @@ function processWoundImage(image) {
         edges.delete();
         finalDilated.delete();
         finalContours.delete();
+        
+        // Scroll to result after processing is complete
+        scrollToResult();
     };
 }
 
