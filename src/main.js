@@ -1,0 +1,128 @@
+import './style.css'
+document.querySelector('#app').innerHTML = `
+    <h1>Wound Area Measurement</h1>
+    <input type="file" id="imageInput" accept="image/*">
+    <canvas id="outputCanvas"></canvas>
+    <canvas id="outputGrayscale"></canvas>
+    <canvas id="outputBlur"></canvas>
+    <canvas id="outputThreshold"></canvas>
+    <canvas id="outputContours"></canvas>
+    <canvas id="outputDilated"></canvas>
+    <canvas id="outputErosion"></canvas>
+    <canvas id="outputCanny"></canvas>
+    <canvas id="outputFinalDilated"></canvas>
+    <p id="result"></p>
+`;
+
+// Tunggu sampai OpenCV siap sebelum menjalankan kode
+function waitForOpenCV(callback) {
+    if (cv && cv.getBuildInformation) {
+        callback();
+    } else {
+        setTimeout(() => waitForOpenCV(callback), 50);
+    }
+}
+
+// Fungsi utama untuk memproses gambar
+function processWoundImage(image) {
+    let imgElement = new Image();
+    imgElement.src = URL.createObjectURL(image);
+    imgElement.onload = function () {
+        let canvas = document.getElementById('outputCanvas');
+        let ctx = canvas.getContext('2d');
+        canvas.width = imgElement.width;
+        canvas.height = imgElement.height;
+        ctx.drawImage(imgElement, 0, 0, imgElement.width, imgElement.height);
+
+        let imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        let src = cv.matFromImageData(imgData);
+
+        // Konversi ke grayscale
+        let gray = new cv.Mat();
+        cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
+        cv.imshow('outputGrayscale', gray);
+
+        // Blurring gambar
+        let blurred = new cv.Mat();
+        cv.GaussianBlur(gray, blurred, new cv.Size(19, 19), 0);
+        cv.imshow('outputBlur', blurred);
+
+        // Thresholding dengan Otsu's method
+        let thresh = new cv.Mat();
+        cv.threshold(blurred, thresh, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU);
+        cv.imshow('outputThreshold', thresh);
+
+        // Mencari kontur
+        let contours = new cv.MatVector();
+        let hierarchy = new cv.Mat();
+        cv.findContours(thresh, contours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
+
+        // Menghapus bentuk kecil (noise)
+        let minArea = 100;
+        let largeContours = [];
+        for (let i = 0; i < contours.size(); i++) {
+            let cnt = contours.get(i);
+            if (cv.contourArea(cnt) > minArea) {
+                largeContours.push(cnt);
+            }
+        }
+
+        // Dilasi untuk menggabungkan bentuk kecil
+        let kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(2, 2));
+        let dilated = new cv.Mat();
+        cv.dilate(thresh, dilated, kernel);
+        cv.imshow('outputDilated', dilated);
+
+        // Erosi untuk mengembalikan ukuran area luka
+        let eroded = new cv.Mat();
+        cv.erode(dilated, eroded, kernel);
+        cv.imshow('outputErosion', eroded);
+
+        // Deteksi Canny
+        let edges = new cv.Mat();
+        cv.Canny(eroded, edges, 100, 200);
+        cv.imshow('outputCanny', edges);
+
+        // Dilasi akhir untuk menemukan kontur akhir
+        let finalDilated = new cv.Mat();
+        cv.dilate(edges, finalDilated, kernel);
+        cv.imshow('outputFinalDilated', finalDilated);
+
+        // Menghitung area luka
+        let finalContours = new cv.MatVector();
+        cv.findContours(finalDilated, finalContours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
+        let woundAreaPx = 0;
+        for (let i = 0; i < finalContours.size(); i++) {
+            woundAreaPx += cv.contourArea(finalContours.get(i));
+        }
+
+        let dpi = 300;
+        let pxToCm = 2.54 / dpi;
+        let woundAreaCm2 = woundAreaPx * (pxToCm ** 2);
+
+        document.getElementById('result').innerText = `Area luka: ${woundAreaCm2.toFixed(2)} cm²`;
+
+        // Hapus matriks dari memori
+        src.delete();
+        gray.delete();
+        blurred.delete();
+        thresh.delete();
+        contours.delete();
+        hierarchy.delete();
+        dilated.delete();
+        eroded.delete();
+        edges.delete();
+        finalDilated.delete();
+        finalContours.delete();
+    };
+}
+
+// Tunggu OpenCV sebelum menambahkan event listener
+waitForOpenCV(() => {
+    document.getElementById('imageInput').addEventListener('change', function (event) {
+        let file = event.target.files[0];
+        if (file) {
+            processWoundImage(file);
+        }
+    });
+});
