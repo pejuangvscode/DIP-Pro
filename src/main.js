@@ -46,7 +46,7 @@ document.querySelector('#app').innerHTML = `
           <h4>Threshold</h4>
           <canvas id="outputThreshold"></canvas>
         </div>
-        <div class="canvas-item"> 
+        <div class="canvas-item">
           <h4>Dilated</h4>
           <canvas id="outputDilated"></canvas>
         </div>
@@ -59,8 +59,8 @@ document.querySelector('#app').innerHTML = `
           <canvas id="outputCanny"></canvas>
         </div>
         <div class="canvas-item">
-          <h4>Final Dilated</h4>
-          <canvas id="outputFinalDilated"></canvas>
+          <h4>Wound Area</h4>
+          <canvas id="outputWoundArea"></canvas>
         </div>
       </div>
     </div>
@@ -163,21 +163,46 @@ function processWoundImage(image) {
         // Dilasi akhir untuk menemukan kontur akhir
         let finalDilated = new cv.Mat();
         cv.dilate(edges, finalDilated, kernel);
-        cv.imshow('outputFinalDilated', finalDilated);
+
+        // Menampilkan hasil dilasi akhir
+        cv.imshow('outputWoundArea', finalDilated);
+
+        // Gambar kontur di atas gambar asli
+        let contourImage = src.clone();
+
+        // Buat matriks untuk mask
+        let mask = new cv.Mat.zeros(src.rows, src.cols, cv.CV_8UC1);
+
+        // Gambar kontur yang diisi penuh
+        cv.drawContours(mask, contours, -1, new cv.Scalar(255), cv.FILLED);
+
+        // Buat matriks untuk warna overlay
+        let overlay = new cv.Mat(src.rows, src.cols, cv.CV_8UC4, new cv.Scalar(0, 255, 0, 100));
+
+        // Gabungkan overlay dengan gambar asli menggunakan mask
+        let result = new cv.Mat();
+        overlay.copyTo(contourImage, mask);
+
+        // Tambahkan outline hijau di sekitar area luka
+        cv.drawContours(contourImage, contours, -1, new cv.Scalar(0, 255, 0, 255), 2);
+
+        // Tampilkan hasil dengan area luka yang diisi warna
+        cv.imshow('outputWoundArea', contourImage);
 
         // Menghitung area luka
-        let finalContours = new cv.MatVector();
-        cv.findContours(finalDilated, finalContours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
         let woundAreaPx = 0;
-        for (let i = 0; i < finalContours.size(); i++) {
-            woundAreaPx += cv.contourArea(finalContours.get(i));
+        for (let i = 0; i < contours.size(); i++) {
+            woundAreaPx += cv.contourArea(contours.get(i));
         }
 
-        let dpi = 190;
-        let pxToCm = 2.54 / dpi;
-        let woundAreaCm2 = woundAreaPx * (pxToCm ** 2);
+let dpi = 190;
+let pxToCm = 2.54 / dpi;
+let woundAreaCm2 = woundAreaPx * (pxToCm ** 2);
 
-        document.getElementById('result').innerText = `Wound Area: ${woundAreaCm2.toFixed(2)} cm²`;
+document.getElementById('result').innerText = `Wound Area: ${woundAreaCm2.toFixed(2)} cm²`;
+
+// Hapus matriks dari memori
+contourImage.delete();
 
         // Hapus matriks dari memori
         src.delete();
@@ -191,7 +216,11 @@ function processWoundImage(image) {
         edges.delete();
         finalDilated.delete();
         finalContours.delete();
-        
+        woundAreaMask.delete();
+        mask.delete();
+        overlay.delete();
+        result.delete();
+
         // Scroll to result after processing is complete
         scrollToResult();
     };
