@@ -46,7 +46,7 @@ document.querySelector('#app').innerHTML = `
           <h4>Threshold</h4>
           <canvas id="outputThreshold"></canvas>
         </div>
-        <div class="canvas-item">
+        <div class="canvas-item"> 
           <h4>Dilated</h4>
           <canvas id="outputDilated"></canvas>
         </div>
