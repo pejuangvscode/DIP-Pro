@@ -23,7 +23,7 @@ document.querySelector('#app').innerHTML = `
   
   <div class="info-section">
     <h2>What is Wound Scanner?</h2>
-    <p>Wound Scanner is a digital imaging-based system designed to accurately measure wound areas using devices such as mobile or computer cameras. This system employs various image processing techniques, including grayscale conversion, threshold-based segmentation, and contour detection and measurement to identify and quantify the affected area. By utilizing image metadata, such as resolution and DPI, Wound Scanner converts measurement results from pixels to metric units to obtain a more precise wound size estimation. Developed as a telemedicine support tool, this technology enables patients or healthcare professionals to monitor wounds efficiently without requiring frequent direct contact. However, the accuracy of measurements may be influenced by several factors, including lighting conditions, camera resolution, and the distance between the device and the wound. Therefore, further development is needed to enhance accuracy and ensure the medical validity of this system.</p>
+    <p>Wound Scanner is a digital imaging-based system designed to accurately measure wound areas using devices such as mobile or computer cameras. This system employs various image processing techniques, including grayscale conversion, threshold-based segmentation, and contour detection and measurement to identify and quantify the affected area. By utilizing image metadata, such as resolution and DPI, Wound Scanner converts measurement results from pixels to metric units to obtain a more precise wound size estimation. Developed as a telemedicine support tool, this technology enables patients or healthcare professionals to monitor wounds efficiently without requiring frequent direct contact. However, the accuracy of measurements may be influenced by several factors, including lighting conditions, camera resolution, and the distance between the device and the wound. Therefore, further development is needed to enhance accuracy and ensure the medical validity of this system.</p>
   </div>
   
   <div class="processing-container">
@@ -79,14 +79,14 @@ document.getElementById('processingSteps').style.display = 'none';
 function scrollToResult() {
   const resultContainer = document.getElementById('resultContainer');
   if (resultContainer) {
-    // Adding a slight delay to ensure all processing is complete
+    // Adding a longer delay to ensure all processing is complete
     setTimeout(() => {
       resultContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }, 200);
+    }, 500); // Increased from 200ms to 500ms for better reliability
   }
 }
 
-// Tunggu sampai OpenCV siap sebelum menjalankan kode
+// Wait for OpenCV to be ready before running code
 function waitForOpenCV(callback) {
     if (window.cv && cv.getBuildInformation) {
         console.log('OpenCV loaded successfully');
@@ -97,7 +97,7 @@ function waitForOpenCV(callback) {
     }
 }
 
-// Fungsi utama untuk memproses gambar
+// Main function for processing wound image
 function processWoundImage(image) {
     // Show processing steps
     document.getElementById('processingSteps').style.display = 'block';
@@ -105,128 +105,130 @@ function processWoundImage(image) {
     let imgElement = new Image();
     imgElement.src = URL.createObjectURL(image);
     imgElement.onload = function () {
-        let canvas = document.getElementById('outputCanvas');
-        let ctx = canvas.getContext('2d');
-        canvas.width = imgElement.width;
-        canvas.height = imgElement.height;
-        ctx.drawImage(imgElement, 0, 0, imgElement.width, imgElement.height);
+        try {
+            let canvas = document.getElementById('outputCanvas');
+            let ctx = canvas.getContext('2d');
+            canvas.width = imgElement.width;
+            canvas.height = imgElement.height;
+            ctx.drawImage(imgElement, 0, 0, imgElement.width, imgElement.height);
 
-        let imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        let src = cv.matFromImageData(imgData);
+            let imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            let src = cv.matFromImageData(imgData);
 
-        // Konversi ke grayscale
-        let gray = new cv.Mat();
-        cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
-        cv.imshow('outputGrayscale', gray);
+            // Convert to grayscale
+            let gray = new cv.Mat();
+            cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
+            cv.imshow('outputGrayscale', gray);
 
-        // Blurring gambar
-        let blurred = new cv.Mat();
-        cv.GaussianBlur(gray, blurred, new cv.Size(19, 19), 0);
-        cv.imshow('outputBlur', blurred);
+            // Blur the image
+            let blurred = new cv.Mat();
+            cv.GaussianBlur(gray, blurred, new cv.Size(19, 19), 0);
+            cv.imshow('outputBlur', blurred);
 
-        // Thresholding dengan Otsu's method
-        let thresh = new cv.Mat();
-        cv.threshold(blurred, thresh, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU);
-        cv.imshow('outputThreshold', thresh);
+            // Threshold with Otsu's method
+            let thresh = new cv.Mat();
+            cv.threshold(blurred, thresh, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU);
+            cv.imshow('outputThreshold', thresh);
 
-        // Mencari kontur
-        let contours = new cv.MatVector();
-        let hierarchy = new cv.Mat();
-        cv.findContours(thresh, contours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
+            // Find contours
+            let contours = new cv.MatVector();
+            let hierarchy = new cv.Mat();
+            cv.findContours(thresh, contours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
 
-        // Menghapus bentuk kecil (noise)
-        let minArea = 100;
-        let largeContours = [];
-        for (let i = 0; i < contours.size(); i++) {
-            let cnt = contours.get(i);
-            if (cv.contourArea(cnt) > minArea) {
-                largeContours.push(cnt);
+            // Filter small shapes (noise) but we'll work with the original contours
+            // and just calculate area for the ones that meet our criteria
+            let minArea = 100;
+
+            // Dilate to merge small shapes
+            let kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(2, 2));
+            let dilated = new cv.Mat();
+            cv.dilate(thresh, dilated, kernel);
+            cv.imshow('outputDilated', dilated);
+
+            // Erosion to restore wound area size
+            let eroded = new cv.Mat();
+            cv.erode(dilated, eroded, kernel);
+            cv.imshow('outputErosion', eroded);
+
+            // Canny edge detection
+            let edges = new cv.Mat();
+            cv.Canny(eroded, edges, 100, 200);
+            cv.imshow('outputCanny', edges);
+
+            // Final dilation to find final contours
+            let finalDilated = new cv.Mat();
+            cv.dilate(edges, finalDilated, kernel);
+
+            // Draw contour on original image
+            let contourImage = src.clone();
+
+            // Create matrix for mask
+            let mask = new cv.Mat.zeros(src.rows, src.cols, cv.CV_8UC1);
+
+            // Draw filled contours
+            cv.drawContours(mask, contours, -1, new cv.Scalar(255), cv.FILLED);
+
+            // Create matrix for color overlay
+            let overlay = new cv.Mat(src.rows, src.cols, cv.CV_8UC4, new cv.Scalar(0, 255, 0, 100));
+
+            // Combine overlay with original image using mask
+            overlay.copyTo(contourImage, mask);
+
+            // Add green outline around wound area
+            cv.drawContours(contourImage, contours, -1, new cv.Scalar(0, 255, 0, 255), 2);
+
+            // Display result with colored wound area
+            cv.imshow('outputWoundArea', contourImage);
+
+            // Calculate wound area (only for contours larger than minArea)
+            let woundAreaPx = 0;
+            for (let i = 0; i < contours.size(); i++) {
+                let cnt = contours.get(i);
+                let area = cv.contourArea(cnt);
+                if (area > minArea) {
+                    woundAreaPx += area;
+                }
             }
+
+            let dpi = 190;
+            let pxToCm = 2.54 / dpi;
+            let woundAreaCm2 = woundAreaPx * (pxToCm ** 2);
+
+            document.getElementById('result').innerText = `Wound Area: ${woundAreaCm2.toFixed(2)} cm²`;
+
+            // Clean up matrices from memory
+            src.delete();
+            gray.delete();
+            blurred.delete();
+            thresh.delete();
+            contours.delete();
+            hierarchy.delete();
+            dilated.delete();
+            eroded.delete();
+            edges.delete();
+            finalDilated.delete();
+            contourImage.delete();
+            mask.delete();
+            overlay.delete();
+
+            // Scroll to result after processing is complete - with forced delay
+            setTimeout(() => {
+                scrollToResult();
+            }, 800);
+            
+        } catch (error) {
+            console.error('Error processing image:', error);
+            document.getElementById('result').innerText = `Error: ${error.message}`;
+            
+            // Still scroll to result even if there's an error
+            setTimeout(() => {
+                scrollToResult();
+            }, 500);
         }
-
-        // Dilasi untuk menggabungkan bentuk kecil
-        let kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(2, 2));
-        let dilated = new cv.Mat();
-        cv.dilate(thresh, dilated, kernel);
-        cv.imshow('outputDilated', dilated);
-
-        // Erosi untuk mengembalikan ukuran area luka
-        let eroded = new cv.Mat();
-        cv.erode(dilated, eroded, kernel);
-        cv.imshow('outputErosion', eroded);
-
-        // Deteksi Canny
-        let edges = new cv.Mat();
-        cv.Canny(eroded, edges, 100, 200);
-        cv.imshow('outputCanny', edges);
-
-        // Dilasi akhir untuk menemukan kontur akhir
-        let finalDilated = new cv.Mat();
-        cv.dilate(edges, finalDilated, kernel);
-
-        // Menampilkan hasil dilasi akhir
-        cv.imshow('outputWoundArea', finalDilated);
-
-        // Gambar kontur di atas gambar asli
-        let contourImage = src.clone();
-
-        // Buat matriks untuk mask
-        let mask = new cv.Mat.zeros(src.rows, src.cols, cv.CV_8UC1);
-
-        // Gambar kontur yang diisi penuh
-        cv.drawContours(mask, contours, -1, new cv.Scalar(255), cv.FILLED);
-
-        // Buat matriks untuk warna overlay
-        let overlay = new cv.Mat(src.rows, src.cols, cv.CV_8UC4, new cv.Scalar(0, 255, 0, 100));
-
-        // Gabungkan overlay dengan gambar asli menggunakan mask
-        let result = new cv.Mat();
-        overlay.copyTo(contourImage, mask);
-
-        // Tambahkan outline hijau di sekitar area luka
-        cv.drawContours(contourImage, contours, -1, new cv.Scalar(0, 255, 0, 255), 2);
-
-        // Tampilkan hasil dengan area luka yang diisi warna
-        cv.imshow('outputWoundArea', contourImage);
-
-        // Menghitung area luka
-        let woundAreaPx = 0;
-        for (let i = 0; i < contours.size(); i++) {
-            woundAreaPx += cv.contourArea(contours.get(i));
-        }
-
-let dpi = 190;
-let pxToCm = 2.54 / dpi;
-let woundAreaCm2 = woundAreaPx * (pxToCm ** 2);
-
-document.getElementById('result').innerText = `Wound Area: ${woundAreaCm2.toFixed(2)} cm²`;
-
-// Hapus matriks dari memori
-contourImage.delete();
-
-        // Hapus matriks dari memori
-        src.delete();
-        gray.delete();
-        blurred.delete();
-        thresh.delete();
-        contours.delete();
-        hierarchy.delete();
-        dilated.delete();
-        eroded.delete();
-        edges.delete();
-        finalDilated.delete();
-        finalContours.delete();
-        woundAreaMask.delete();
-        mask.delete();
-        overlay.delete();
-        result.delete();
-
-        // Scroll to result after processing is complete
-        scrollToResult();
     };
 }
 
-// Tunggu OpenCV sebelum menambahkan event listener
+// Wait for OpenCV before adding event listener
 waitForOpenCV(() => {
     document.getElementById('imageInput').addEventListener('change', function (event) {
         let file = event.target.files[0];
