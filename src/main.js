@@ -79,10 +79,10 @@ document.getElementById('processingSteps').style.display = 'none';
 function scrollToResult() {
   const resultContainer = document.getElementById('resultContainer');
   if (resultContainer) {
-    // Adding a longer delay to ensure all processing is complete
+    // Adding a slight delay to ensure all processing is complete
     setTimeout(() => {
       resultContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }, 500); // Increased from 200ms to 500ms for better reliability
+    }, 200);
   }
 }
 
@@ -97,7 +97,7 @@ function waitForOpenCV(callback) {
     }
 }
 
-// Main function for processing wound image
+// Main function to process the wound image
 function processWoundImage(image) {
     // Show processing steps
     document.getElementById('processingSteps').style.display = 'block';
@@ -105,126 +105,149 @@ function processWoundImage(image) {
     let imgElement = new Image();
     imgElement.src = URL.createObjectURL(image);
     imgElement.onload = function () {
-        try {
-            let canvas = document.getElementById('outputCanvas');
-            let ctx = canvas.getContext('2d');
-            canvas.width = imgElement.width;
-            canvas.height = imgElement.height;
-            ctx.drawImage(imgElement, 0, 0, imgElement.width, imgElement.height);
+        // Set up canvas
+        let canvas = document.getElementById('outputCanvas');
+        let ctx = canvas.getContext('2d');
+        canvas.width = imgElement.width;
+        canvas.height = imgElement.height;
+        ctx.drawImage(imgElement, 0, 0, imgElement.width, imgElement.height);
 
-            let imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            let src = cv.matFromImageData(imgData);
+        let imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        let src = cv.matFromImageData(imgData);
 
-            // Convert to grayscale
-            let gray = new cv.Mat();
-            cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
-            cv.imshow('outputGrayscale', gray);
+        // Convert to grayscale
+        let gray = new cv.Mat();
+        cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
+        cv.imshow('outputGrayscale', gray);
 
-            // Blur the image
-            let blurred = new cv.Mat();
-            cv.GaussianBlur(gray, blurred, new cv.Size(19, 19), 0);
-            cv.imshow('outputBlur', blurred);
+        // Blur the image to reduce noise
+        let blurred = new cv.Mat();
+        cv.GaussianBlur(gray, blurred, new cv.Size(19, 19), 0);
+        cv.imshow('outputBlur', blurred);
 
-            // Threshold with Otsu's method
-            let thresh = new cv.Mat();
-            cv.threshold(blurred, thresh, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU);
-            cv.imshow('outputThreshold', thresh);
+        // Apply thresholding with Otsu's method
+        let thresh = new cv.Mat();
+        cv.threshold(blurred, thresh, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU);
+        cv.imshow('outputThreshold', thresh);
 
-            // Find contours
-            let contours = new cv.MatVector();
-            let hierarchy = new cv.Mat();
-            cv.findContours(thresh, contours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
-
-            // Filter small shapes (noise) but we'll work with the original contours
-            // and just calculate area for the ones that meet our criteria
-            let minArea = 100;
-
-            // Dilate to merge small shapes
-            let kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(2, 2));
-            let dilated = new cv.Mat();
-            cv.dilate(thresh, dilated, kernel);
-            cv.imshow('outputDilated', dilated);
-
-            // Erosion to restore wound area size
-            let eroded = new cv.Mat();
-            cv.erode(dilated, eroded, kernel);
-            cv.imshow('outputErosion', eroded);
-
-            // Canny edge detection
-            let edges = new cv.Mat();
-            cv.Canny(eroded, edges, 100, 200);
-            cv.imshow('outputCanny', edges);
-
-            // Final dilation to find final contours
-            let finalDilated = new cv.Mat();
-            cv.dilate(edges, finalDilated, kernel);
-
-            // Draw contour on original image
-            let contourImage = src.clone();
-
-            // Create matrix for mask
-            let mask = new cv.Mat.zeros(src.rows, src.cols, cv.CV_8UC1);
-
-            // Draw filled contours
-            cv.drawContours(mask, contours, -1, new cv.Scalar(255), cv.FILLED);
-
-            // Create matrix for color overlay
-            let overlay = new cv.Mat(src.rows, src.cols, cv.CV_8UC4, new cv.Scalar(0, 255, 0, 100));
-
-            // Combine overlay with original image using mask
-            overlay.copyTo(contourImage, mask);
-
-            // Add green outline around wound area
-            cv.drawContours(contourImage, contours, -1, new cv.Scalar(0, 255, 0, 255), 2);
-
-            // Display result with colored wound area
-            cv.imshow('outputWoundArea', contourImage);
-
-            // Calculate wound area (only for contours larger than minArea)
-            let woundAreaPx = 0;
-            for (let i = 0; i < contours.size(); i++) {
-                let cnt = contours.get(i);
-                let area = cv.contourArea(cnt);
-                if (area > minArea) {
-                    woundAreaPx += area;
+        // Create Region of Interest (ROI) mask to focus on the central area
+        // This eliminates border noise in the image
+        let roiMask = new cv.Mat.zeros(thresh.rows, thresh.cols, cv.CV_8UC1);
+        
+        // Define a region that excludes the edges (adjust as needed)
+        let margin = Math.min(thresh.rows, thresh.cols) * 0.1; // 10% margin
+        let roiRect = new cv.Rect(
+            margin, 
+            margin, 
+            thresh.cols - (2 * margin), 
+            thresh.rows - (2 * margin)
+        );
+        
+        // Fill the ROI with white (255)
+        roiMask.roi(roiRect).setTo(new cv.Scalar(255));
+        
+        // Apply ROI mask to threshold image
+        let threshRoi = new cv.Mat();
+        cv.bitwise_and(thresh, roiMask, threshRoi);
+        
+        // Apply morphological operations
+        let kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(2, 2));
+        
+        // Dilate to fill in small gaps and connect components
+        let dilated = new cv.Mat();
+        cv.dilate(threshRoi, dilated, kernel);
+        cv.imshow('outputDilated', dilated);
+        
+        // Erode to restore shape
+        let eroded = new cv.Mat();
+        cv.erode(dilated, eroded, kernel);
+        cv.imshow('outputErosion', eroded);
+        
+        // Find edges using Canny edge detector
+        let edges = new cv.Mat();
+        cv.Canny(eroded, edges, 100, 200);
+        cv.imshow('outputCanny', edges);
+        
+        // Find contours in the masked image
+        let contours = new cv.MatVector();
+        let hierarchy = new cv.Mat();
+        cv.findContours(eroded, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+        
+        // Filter contours by size to remove noise
+        let minArea = 200; // Adjust this threshold as needed
+        let validContours = new cv.MatVector();
+        let largestContourArea = 0;
+        let largestContourIdx = -1;
+        
+        // Find the largest contour (likely the wound)
+        for (let i = 0; i < contours.size(); i++) {
+            let cnt = contours.get(i);
+            let area = cv.contourArea(cnt);
+            
+            if (area > minArea) {
+                validContours.push_back(cnt);
+                
+                if (area > largestContourArea) {
+                    largestContourArea = area;
+                    largestContourIdx = validContours.size() - 1;
                 }
             }
-
-            let dpi = 190;
-            let pxToCm = 2.54 / dpi;
-            let woundAreaCm2 = woundAreaPx * (pxToCm ** 2);
-
-            document.getElementById('result').innerText = `Wound Area: ${woundAreaCm2.toFixed(2)} cm²`;
-
-            // Clean up matrices from memory
-            src.delete();
-            gray.delete();
-            blurred.delete();
-            thresh.delete();
-            contours.delete();
-            hierarchy.delete();
-            dilated.delete();
-            eroded.delete();
-            edges.delete();
-            finalDilated.delete();
-            contourImage.delete();
-            mask.delete();
-            overlay.delete();
-
-            // Scroll to result after processing is complete - with forced delay
-            setTimeout(() => {
-                scrollToResult();
-            }, 800);
-            
-        } catch (error) {
-            console.error('Error processing image:', error);
-            document.getElementById('result').innerText = `Error: ${error.message}`;
-            
-            // Still scroll to result even if there's an error
-            setTimeout(() => {
-                scrollToResult();
-            }, 500);
         }
+        
+        // Create an image for the wound area visualization
+        let woundAreaImage = src.clone();
+        
+        // Draw the wound area with green overlay
+        let woundMask = new cv.Mat.zeros(src.rows, src.cols, cv.CV_8UC1);
+        if (validContours.size() > 0) {
+            // Draw only valid contours
+            cv.drawContours(woundMask, validContours, -1, new cv.Scalar(255), cv.FILLED);
+            
+            // Create green overlay
+            let overlay = new cv.Mat(src.rows, src.cols, cv.CV_8UC4, new cv.Scalar(0, 255, 0, 100));
+            
+            // Apply overlay only to wound area
+            overlay.copyTo(woundAreaImage, woundMask);
+            
+            // Add outline
+            cv.drawContours(woundAreaImage, validContours, -1, new cv.Scalar(0, 255, 0, 255), 2);
+        }
+        
+        // Show the result with wound area highlighted
+        cv.imshow('outputWoundArea', woundAreaImage);
+        
+        // Calculate the wound area
+        let woundAreaPx = 0;
+        for (let i = 0; i < validContours.size(); i++) {
+            woundAreaPx += cv.contourArea(validContours.get(i));
+        }
+        
+        // Convert from pixels to cm²
+        let dpi = 140;
+        let pxToCm = 2.54 / dpi;
+        let woundAreaCm2 = woundAreaPx * (pxToCm ** 2);
+        
+        // Update result text
+        document.getElementById('result').innerText = `Wound Area: ${woundAreaCm2.toFixed(2)} cm²`;
+        
+        // Clean up - release memory
+        src.delete();
+        gray.delete();
+        blurred.delete();
+        thresh.delete();
+        threshRoi.delete();
+        roiMask.delete();
+        contours.delete();
+        validContours.delete();
+        hierarchy.delete();
+        dilated.delete();
+        eroded.delete();
+        edges.delete();
+        woundMask.delete();
+        woundAreaImage.delete();
+        
+        // Scroll to result after processing is complete
+        scrollToResult();
     };
 }
 
